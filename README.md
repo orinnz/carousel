@@ -2,6 +2,10 @@
 
 This project is an implementation of a reusable, interactive carousel component built with React and TypeScript, designed specifically for the Frontend Middle role test.
 
+## Live Demo
+
+[https://carousel-app.phuoc.workers.dev](https://carousel-app.phuoc.workers.dev)
+
 ## Project Setup & Running Locally
 
 This project was built using Vite. To run this project locally, follow these steps:
