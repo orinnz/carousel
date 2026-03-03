@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState } from 'react';
 import styles from './Carousel.module.css';
+import { useCarouselAutoPlay } from '../../hooks/useCarouselAutoPlay';
+import { useCarouselDrag } from '../../hooks/useCarouselDrag';
 
 interface CarouselItem {
   id: number | string;
@@ -10,58 +12,21 @@ interface CarouselItem {
 
 interface CarouselProps {
   items: CarouselItem[];
-  autoPlayInterval?: number; // default 3000ms
-  cardWidth?: number; // default 300px
+  autoPlayInterval?: number;
+  cardWidth?: number;
 }
 
-export const Carousel: React.FC<CarouselProps> = ({ 
-  items, 
+export const Carousel: React.FC<CarouselProps> = ({
+  items,
   autoPlayInterval = 3000,
-  cardWidth = 300 
+  cardWidth = 300,
 }) => {
-  // To create a seamless infinite loop, we need to duplicate the items.
-  // We'll prepend one set and append one set: [ ...items, ...items, ...items ]
-  // The user initially sees the middle set.
   const extendedItems = [...items, ...items, ...items];
-  
-  // Start at the beginning of the "middle" set
+
   const [currentIndex, setCurrentIndex] = useState(items.length);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState(0);
 
-  const trackRef = useRef<HTMLDivElement>(null);
-  const autoPlayRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Refs for drag tracking
-  const dragStartX = useRef(0);
-  const lastInteractionTime = useRef(Date.now());
-  const hasDraggedRef = useRef(false);
-
-  // --- Auto Play Logic ---
-  const startAutoPlay = useCallback(() => {
-    stopAutoPlay();
-    autoPlayRef.current = setInterval(() => {
-      // Only slide if not currently interacting (dragging)
-      if (!isDragging && Date.now() - lastInteractionTime.current > 1000) {
-         // Requirement: sliding direction right to left (meaning next slide comes from the right)
-         handleNext();
-      }
-    }, autoPlayInterval);
-  }, [autoPlayInterval, isDragging]);
-
-  const stopAutoPlay = () => {
-    if (autoPlayRef.current) {
-      clearInterval(autoPlayRef.current);
-    }
-  };
-
-  useEffect(() => {
-    startAutoPlay();
-    return () => stopAutoPlay();
-  }, [startAutoPlay]);
-
-  // --- Navigation Logic ---
   const handleNext = () => {
     setIsTransitioning(true);
     setCurrentIndex((prev) => prev + 1);
@@ -72,137 +37,77 @@ export const Carousel: React.FC<CarouselProps> = ({
     setCurrentIndex((prev) => prev - 1);
   };
 
-  // --- Infinite Loop Logic (The "Magic" Snap) ---
-  // When the transition ends, we check if we've moved completely out of the "middle" safe zone
   const handleTransitionEnd = () => {
     setIsTransitioning(false);
 
-    // If we've reached the start of the 3rd set (right bounds)
-    if (currentIndex >= items.length * 2) {
-      // Snap back to the corresponding slide in the middle set
-      setCurrentIndex(currentIndex - items.length);
-    } 
-    // If we've reached the end of the 1st set (left bounds)
-    else if (currentIndex < items.length) {
-      // Snap forward to the corresponding slide in the middle set
-      setCurrentIndex(currentIndex + items.length);
-    }
-  };
+    if (currentIndex < items.length * 2 && currentIndex >= items.length) return;
 
-  // --- Drag & Swipe Handlers ---
-  const handlePointerDown = (e: React.PointerEvent) => {
-    setIsDragging(true);
-    dragStartX.current = e.clientX;
-    hasDraggedRef.current = false;
-    stopAutoPlay(); // Pause on interaction
-    
-    // Optional: Capture pointer to track outside bounds
-    if (trackRef.current) {
-      trackRef.current.setPointerCapture(e.pointerId);
-    }
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging) return;
-    
-    const currentX = e.clientX;
-    const diff = currentX - dragStartX.current;
-    
-    // Only register as "dragged" if moved a little bit (prevent accidental drag on small jitters)
-    if (Math.abs(diff) > 5) {
-      hasDraggedRef.current = true;
-    }
-    
-    setDragOffset(diff);
-  };
-
-  const handlePointerUpOrLeave = (e: React.PointerEvent) => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    lastInteractionTime.current = Date.now();
-    startAutoPlay(); // Resume auto-play
+    const newIndex =
+      currentIndex >= items.length * 2
+        ? currentIndex - items.length
+        : currentIndex + items.length;
 
     if (trackRef.current) {
-      trackRef.current.releasePointerCapture(e.pointerId);
+      trackRef.current.style.transition = 'none';
+      trackRef.current.style.transform = `translate3d(${-(newIndex * cardWidth)}px, 0, 0)`;
     }
 
-    // Determine if we dragged enough to trigger a slide (Requirement: 40px)
-    const threshold = 40;
-    
-    if (dragOffset > threshold) {
-      // Swiped Right -> go Prev
-      handlePrev();
-      // Add a small delay for dragging visual snap before clearing offset
-      requestAnimationFrame(() => setDragOffset(0));
-    } else if (dragOffset < -threshold) {
-      // Swiped Left -> go Next
-      handleNext();
-      requestAnimationFrame(() => setDragOffset(0));
-    } else {
-      // Didn't drag enough, just snap back to current
-      setIsTransitioning(true);
-      requestAnimationFrame(() => setDragOffset(0));
-    }
+    setCurrentIndex(newIndex);
   };
 
-  // Handle click on Card
-  const handleCardClick = (e: React.MouseEvent, url?: string) => {
-    // Prevent accidental clicks while user was dragging
-    if (hasDraggedRef.current) {
-      e.preventDefault();
-      return;
-    }
-    
-    if (url) {
-      // Simulated routing / external link opening
-      window.open(url, '_blank');
-    }
-  };
+  const { startAutoPlay, stopAutoPlay, lastInteractionTime } = useCarouselAutoPlay(
+    autoPlayInterval,
+    isDragging,
+    handleNext
+  );
 
-  // --- Calculate Track Translation ---
-  // Base transform moving strictly by currentIndex and cardWidth
-  const baseTranslate = -(currentIndex * cardWidth);
-  // Add dragOffset for 1:1 follow effect while dragging
-  const finalTranslate = baseTranslate + dragOffset;
-  
-  // Transition speed: 0s if dragging or snapping, 0.5s if smoothly sliding
-  const transitionStyle = isTransitioning && !isDragging 
-    ? 'transform 0.5s cubic-bezier(0.25, 1, 0.5, 1)' 
-    : 'none';
+  const { dragOffset, trackRef, handlePointerDown, handlePointerMove, handlePointerUpOrLeave, handleCardClick } =
+    useCarouselDrag({
+      setIsDragging,
+      setIsTransitioning,
+      startAutoPlay,
+      stopAutoPlay,
+      lastInteractionTime,
+      onNext: handleNext,
+      onPrev: handlePrev,
+    });
+
+  const finalTranslate = -(currentIndex * cardWidth) + dragOffset;
+  const transitionStyle =
+    isTransitioning && !isDragging ? 'transform 0.5s cubic-bezier(0.25, 1, 0.5, 1)' : 'none';
 
   return (
-    <div 
+    <div
       className={styles.carouselContainer}
-      onMouseEnter={stopAutoPlay} // Pause auto-sliding on hover
+      onMouseEnter={stopAutoPlay}
       onMouseLeave={startAutoPlay}
     >
-      <div 
+      <div
         ref={trackRef}
         className={`${styles.track} ${isDragging ? styles.grabbing : styles.grab}`}
         style={{
           transform: `translate3d(${finalTranslate}px, 0, 0)`,
           transition: transitionStyle,
-          width: `${extendedItems.length * cardWidth}px`
+          width: `${extendedItems.length * cardWidth}px`,
         }}
         onTransitionEnd={handleTransitionEnd}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUpOrLeave}
-        onPointerCancel={handlePointerUpOrLeave} // Fallback for interrupted touch
+        onPointerUp={(e) => handlePointerUpOrLeave(e, dragOffset)}
+        onPointerCancel={(e) => handlePointerUpOrLeave(e, dragOffset)}
       >
         {extendedItems.map((item, index) => (
-          <div 
+          <div
             key={`${item.id}-${index}`}
             className={styles.card}
             style={{ width: `${cardWidth}px` }}
             onClick={(e) => handleCardClick(e, item.landing_page)}
           >
-            {/* Prevent default image dragging which conflicts with our custom pointer events */}
-            <img 
-              src={item.image} 
-              alt={item.title} 
+            <img
+              src={item.image}
+              alt={item.title}
               className={styles.cardImage}
-              draggable={false} 
+              draggable={false}
             />
             <div className={styles.cardTitleOverlay}>
               <span className={styles.cardTitle}>{item.title}</span>

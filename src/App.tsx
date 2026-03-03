@@ -19,7 +19,7 @@ function App() {
       </header>
       
       <main>
-        {/* Requirement: Viewport size 750px * 300px, Card Size 300x300. Max cards visible 2.5 */}
+        {/* Requirements: Viewport size 750px * 300px, Card Size 300x300. Max cards visible 2.5 */}
         <Carousel items={mockData} cardWidth={300} autoPlayInterval={3000} />
       </main>
     </div>
